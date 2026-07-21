@@ -545,7 +545,7 @@ function openAdd(){
   const sheet=document.getElementById('sheet');
   sheet.innerHTML=`<div class="grip"></div>
     <h2>Add a supplement</h2>
-    <div class="sd">Snap the label with your camera, or enter it by hand.</div>
+    <div class="sd">Snap the label with your camera, or enter it by hand. <b style="color:var(--gold-soft)">Tip:</b> aim at the front (the big product name) in good light for the best read.</div>
     <div class="vf"><div class="sl"></div>
       <div class="lbl"><div class="lt">Supplement Facts</div>
         <div class="lf"><span>Serving Size</span><span>1</span></div>
@@ -644,6 +644,7 @@ function loadTesseract(cb){
   })();
 }
 const DETECTORS=[
+  {keys:['n-acetyl','acetyl cyste','(nac)','cysteine'], name:'NAC', type:'flexible'},
   {keys:['vitamin d','d3','d-3'], name:'Vitamin D3', type:'fat_soluble', d3:true},
   {keys:['fish oil','omega'], name:'Omega-3 Fish Oil', type:'fat_soluble'},
   {keys:['coenzyme','coq','ubiquin'], name:'CoQ10', type:'fat_soluble'},
@@ -651,14 +652,26 @@ const DETECTORS=[
   {keys:['ferrous','iron'], name:'Iron', type:'iron'},
   {keys:['magnesium'], name:'Magnesium', type:'magnesium'},
   {keys:['zinc'], name:'Zinc', type:'zinc'},
+  {keys:['selenium','selenomethionine'], name:'Selenium', type:'flexible'},
+  {keys:['molybden'], name:'Molybdenum', type:'flexible'},
+  {keys:['potassium'], name:'Potassium', type:'with_food'},
+  {keys:['iodine'], name:'Iodine', type:'flexible'},
   {keys:['vitamin c','ascorbic'], name:'Vitamin C', type:'vitamin_c'},
   {keys:['b-complex','b complex','b12','b-12','methylcobalamin'], name:'B-Complex', type:'bvitamin'},
+  {keys:['vitamin b6','b-6','pyridoxine'], name:'Vitamin B6', type:'bvitamin'},
+  {keys:['folate','folic'], name:'Folate', type:'bvitamin'},
   {keys:['melatonin'], name:'Melatonin', type:'flexible'},
   {keys:['probiotic'], name:'Probiotic', type:'with_food'},
   {keys:['ashwagandha'], name:'Ashwagandha', type:'flexible'},
+  {keys:['rhodiola'], name:'Rhodiola', type:'flexible'},
+  {keys:['berberine'], name:'Berberine', type:'with_food'},
+  {keys:['quercetin'], name:'Quercetin', type:'with_food'},
+  {keys:['theanine'], name:'L-Theanine', type:'flexible'},
+  {keys:['glutamine'], name:'L-Glutamine', type:'flexible'},
   {keys:['creatine'], name:'Creatine', type:'flexible'},
   {keys:['turmeric','curcumin'], name:'Turmeric', type:'with_food'},
   {keys:['collagen'], name:'Collagen', type:'flexible'},
+  {keys:['glucosamine'], name:'Glucosamine', type:'with_food'},
   {keys:['biotin'], name:'Biotin', type:'bvitamin'},
   {keys:['vitamin e'], name:'Vitamin E', type:'fat_soluble'},
   {keys:['vitamin a'], name:'Vitamin A', type:'fat_soluble'},
@@ -666,17 +679,31 @@ const DETECTORS=[
 ];
 function parseLabel(text){
   const t=(text||'').toLowerCase();
-  let best=null, bestIdx=1e9;
-  for(const d of DETECTORS){
-    let idx=1e9;
-    for(const k of d.keys){ const i=t.indexOf(k); if(i>=0 && i<idx) idx=i; }
-    if(idx<bestIdx){ bestIdx=idx; best=d; }
+  // 1) collect every dose token with position + magnitude in mg-equivalent
+  const doses=[]; const re=/(\d[\d,\.]*)\s?(iu|mg|mcg|µg|g)\b/gi; let m;
+  while((m=re.exec(t))){
+    const val=parseFloat(m[1].replace(/,/g,''));
+    if(isNaN(val)) continue;
+    let u=m[2].toLowerCase(); if(u==='µg')u='mcg';
+    let mg = u==='mcg' ? val/1000 : u==='g' ? val*1000 : val; // iu & mg treated as raw
+    doses.push({pos:m.index, val, unit:u, mg});
+  }
+  // 2) the "hero" ingredient is the one with the largest dose
+  let hero = doses.length ? doses.slice().sort((a,b)=>b.mg-a.mg)[0] : null;
+  // 3) collect detector matches with position
+  const dets=[];
+  for(const d of DETECTORS){ let idx=1e9; for(const k of d.keys){ const i=t.indexOf(k); if(i>=0&&i<idx) idx=i; } if(idx<1e9) dets.push({d, idx}); }
+  // 4) name = detector nearest the hero dose (links the big dose to its ingredient); else earliest
+  let best=null;
+  if(dets.length){
+    if(hero){ dets.sort((a,b)=>Math.abs(a.idx-hero.pos)-Math.abs(b.idx-hero.pos)); }
+    else { dets.sort((a,b)=>a.idx-b.idx); }
+    best=dets[0].d;
   }
   let name='', type='flexible';
   if(best){ name=best.name; type=best.type; if(best.d3 && t.indexOf('k2')>=0) name='Vitamin D3 + K2'; }
   let dose='';
-  const m=t.match(/(\d[\d,\.]*)\s?(iu|mg|mcg|µg|g)\b/i);
-  if(m){ let u=m[2].toUpperCase(); if(u==='µG')u='MCG'; dose=m[1].replace(/,/g,'')+' '+u; }
+  if(hero){ let v=(''+hero.val).replace(/\.0$/,''); dose=v+' '+hero.unit.toUpperCase(); }
   return {name, dose, type};
 }
 let scanIndex=0;

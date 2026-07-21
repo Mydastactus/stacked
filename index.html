@@ -205,6 +205,31 @@
   .list-pick .e{font-size:20px;}
   .list-pick .n{font-size:14.5px;font-weight:600;}
   .list-pick .s{font-size:12px;color:var(--muted);}
+
+  /* ---- in-app tutorial (coach marks) ---- */
+  .tut{position:absolute;inset:0;z-index:400;display:none;}
+  .tut.on{display:block;}
+  .tut-ring{position:absolute;border-radius:16px;box-shadow:0 0 0 9999px rgba(4,9,16,.80);
+    border:2px solid var(--gold);transition:all .35s cubic-bezier(.4,0,.2,1);pointer-events:none;}
+  .tut-ring.pulse{animation:tutpulse 1.6s ease-in-out infinite;}
+  @keyframes tutpulse{0%,100%{box-shadow:0 0 0 9999px rgba(4,9,16,.80),0 0 0 0 rgba(212,175,55,.5);}
+    50%{box-shadow:0 0 0 9999px rgba(4,9,16,.80),0 0 0 10px rgba(212,175,55,0);}}
+  .tut-card{position:absolute;left:20px;right:20px;background:var(--card);border:1px solid rgba(212,175,55,.4);
+    border-radius:18px;padding:18px 18px 16px;box-shadow:0 16px 44px rgba(0,0,0,.55);}
+  .tut-card .step{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-soft);}
+  .tut-card .th{font-size:18px;font-weight:700;margin:7px 0 5px;letter-spacing:-.01em;}
+  .tut-card .tb{font-size:13.5px;line-height:1.5;color:var(--muted);}
+  .tut-card .tb b{color:var(--white);}
+  .tut-foot{display:flex;align-items:center;justify-content:space-between;margin-top:16px;}
+  .tut-dots{display:flex;gap:6px;}
+  .tut-dots i{width:7px;height:7px;border-radius:50%;background:var(--line);display:block;transition:all .3s;}
+  .tut-dots i.on{background:var(--gold);width:18px;border-radius:4px;}
+  .tut-btns{display:flex;gap:8px;}
+  .tut-btns button{border:none;cursor:pointer;font-weight:700;font-size:13.5px;border-radius:10px;padding:9px 16px;}
+  .tut-next{background:var(--gold);color:#0D1B2E;}
+  .tut-back{background:var(--card);color:var(--muted);border:1px solid var(--line)!important;}
+  .tut-skip{position:absolute;top:16px;right:18px;background:rgba(28,42,61,.8);border:1px solid var(--line);
+    color:var(--muted);font-size:12px;font-weight:600;padding:7px 13px;border-radius:999px;cursor:pointer;z-index:401;}
 </style>
 </head>
 <body>
@@ -650,6 +675,7 @@ function openSettings(){
     <div class="sd">STACKED times everything around your real day. Change these and the engine re-optimizes.</div>
     ${sliders}
     <button class="btn btn-gold" onclick="saveAnchors()">Save & re-optimize</button>
+    <button class="btn btn-slate" onclick="closeModal();setTimeout(()=>startTutorial(),250)">▶ Replay the tour</button>
     <button class="btn btn-ghost" onclick="resetDemo()">Reset demo data</button>
     <div style="text-align:center;font-size:11px;color:var(--dim);margin-top:14px;line-height:1.5">STACKED prototype · general guidance, not medical advice.<br>Doesn’t check prescription meds — ask your pharmacist.</div>`;
   openModal();
@@ -679,8 +705,92 @@ let toastTimer=null;
 function toast(html){ const t=document.getElementById('toast'); t.innerHTML=html; t.classList.add('show');
   if(toastTimer)clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),1900); }
 
+// ---------- IN-APP TUTORIAL (coach marks) ----------
+const TUT=[
+  {sel:null, title:"Welcome to STACKED", body:"Your supplements, perfectly timed — automatically. Here’s a 30-second tour of how it works.", cta:"Show me"},
+  {sel:'.dose', title:"This is your day", body:"Each card is a supplement, grouped by <b>when</b> to take it — morning, lunch, dinner, bedtime. The AI already timed them for you.", pos:'below'},
+  {sel:'.check', title:"Logging is one tap", body:"Tap the circle to mark a dose <b>taken</b>. That’s the whole thing. <b>Long-press</b> it to skip honestly — skipping never breaks your streak.", pos:'below', pulse:true},
+  {sel:'#streakPill', title:"Build your streak", body:"Every day you log grows your streak. It’s about <b>consistency, not perfection</b> — a missed day is just room to grow.", pos:'below'},
+  {sel:'#fab', title:"Add a supplement", body:"Tap <b>+</b> to add one. Scan a label (or type it in) and the AI schedules it into your day — separating things that clash, pairing things that help.", pos:'above'},
+  {sel:'.tabs', title:"Your other screens", body:"<b>My Stack</b> is everything you take. <b>Progress</b> has your streak, calendar, and achievements. Tap around anytime.", pos:'above'},
+  {sel:'.gear', title:"You’re all set", body:"Replay this tour anytime from the <b>⚙︎ Settings</b> gear. Now go log your first dose — your streak is waiting. 🔥", cta:"Start using STACKED", pos:'below'},
+];
+let tutStep=0;
+function ensureTutDOM(){
+  if(document.getElementById('tut')) return;
+  const d=document.createElement('div'); d.id='tut'; d.className='tut';
+  d.innerHTML=`<div class="tut-ring" id="tutRing"></div>
+    <button class="tut-skip" onclick="endTutorial()">Skip tour</button>
+    <div class="tut-card" id="tutCard">
+      <div class="step" id="tutStepLbl"></div>
+      <div class="th" id="tutTitle"></div>
+      <div class="tb" id="tutBody"></div>
+      <div class="tut-foot">
+        <div class="tut-dots" id="tutDots"></div>
+        <div class="tut-btns">
+          <button class="tut-back" id="tutBack" onclick="tutGo(tutStep-1)">Back</button>
+          <button class="tut-next" id="tutNext" onclick="tutGo(tutStep+1)">Next</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('app').appendChild(d);
+}
+function startTutorial(){
+  showTab('today');            // ensure targets exist
+  ensureTutDOM();
+  document.getElementById('tut').classList.add('on');
+  tutGo(0);
+}
+function tutGo(i){
+  if(i<0) i=0;
+  if(i>=TUT.length){ endTutorial(); return; }
+  tutStep=i;
+  const s=TUT[i];
+  const app=document.getElementById('app').getBoundingClientRect();
+  const ring=document.getElementById('tutRing');
+  const card=document.getElementById('tutCard');
+  // dots
+  document.getElementById('tutDots').innerHTML=TUT.map((_,j)=>`<i class="${j===i?'on':''}"></i>`).join('');
+  document.getElementById('tutStepLbl').textContent=`Step ${i+1} of ${TUT.length}`;
+  document.getElementById('tutTitle').textContent=s.title;
+  document.getElementById('tutBody').innerHTML=s.body;
+  document.getElementById('tutBack').style.visibility = i===0?'hidden':'visible';
+  document.getElementById('tutNext').textContent = s.cta || (i===TUT.length-1?'Done':'Next');
+
+  const target = s.sel ? document.querySelector(s.sel) : null;
+  if(!target){
+    // centered card, no spotlight
+    ring.style.opacity='0';
+    card.style.top='50%'; card.style.transform='translateY(-50%)';
+    return;
+  }
+  ring.style.opacity='1';
+  const r=target.getBoundingClientRect();
+  const pad=8;
+  const x=r.left-app.left-pad, y=r.top-app.top-pad, w=r.width+pad*2, h=r.height+pad*2;
+  ring.style.left=x+'px'; ring.style.top=y+'px'; ring.style.width=w+'px'; ring.style.height=h+'px';
+  ring.className='tut-ring'+(s.pulse?' pulse':'');
+  // place card above or below the target, clamped
+  card.style.transform='none';
+  const cardH=170;
+  let top;
+  if(s.pos==='above'){ top=y-cardH-14; }
+  else { top=y+h+14; }
+  const appH=app.height;
+  if(top<12) top=12;
+  if(top+cardH>appH-12) top=Math.max(12, y-cardH-14);
+  if(top+cardH>appH-12) top=appH-cardH-12;
+  card.style.top=top+'px';
+}
+function endTutorial(){
+  const t=document.getElementById('tut'); if(t) t.classList.remove('on');
+  S.tutorialDone=true; save();
+}
+
 // ---------- boot ----------
 renderToday(); renderStack(); renderProgress();
+// first-launch tutorial
+if(!S.tutorialDone){ setTimeout(()=>{ try{ startTutorial(); }catch(e){} }, 600); }
 </script>
 </body>
 </html>

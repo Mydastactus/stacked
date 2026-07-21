@@ -230,6 +230,8 @@
   .tut-back{background:var(--card);color:var(--muted);border:1px solid var(--line)!important;}
   .tut-skip{position:absolute;top:16px;right:18px;background:rgba(28,42,61,.8);border:1px solid var(--line);
     color:var(--muted);font-size:12px;font-weight:600;padding:7px 13px;border-radius:999px;cursor:pointer;z-index:401;}
+  .spinner{width:40px;height:40px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--gold);margin:8px auto 0;animation:spin .9s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
 </style>
 </head>
 <body>
@@ -557,17 +559,57 @@ function openAdd(){
     <button class="btn btn-ghost" onclick="manualAdd()">Enter manually instead</button>`;
   openModal();
 }
+function esc(s){ return (s||'').replace(/"/g,'&quot;'); }
+function photoHead(url){ return `<div style="text-align:center;margin:4px 0 10px"><img src="${url}" style="max-width:150px;max-height:190px;border-radius:14px;border:1px solid var(--line)"></div>`; }
+function emojiFor(type){ return ({fat_soluble:'☀️',iron:'🩸',calcium:'🦴',zinc:'🛡️',magnesium:'🌊',bvitamin:'⚡',vitamin_c:'🍊',with_food:'🍽️',flexible:'💊'})[type]||'💊'; }
+
 function onCapture(e){
   const f = e.target.files && e.target.files[0];
   if(!f) return;
   const url = URL.createObjectURL(f);
   S.badges.scanner = true; save();
+  showReading(url, 0);
+  loadTesseract(err=>{
+    if(err){ scanFallback(url); return; }
+    try{
+      Tesseract.recognize(url,'eng',{logger:m=>{ if(m && m.status==='recognizing text') showReading(url, Math.round((m.progress||0)*100)); }})
+        .then(res=>{
+          const text=(res&&res.data&&res.data.text)||'';
+          const p=parseLabel(text);
+          if(!p.name && !p.dose){ scanFallback(url); } else { scanResult(url, p); }
+        })
+        .catch(()=>scanFallback(url));
+    }catch(_){ scanFallback(url); }
+  });
+}
+function showReading(url,pct){
   const sheet=document.getElementById('sheet');
-  sheet.innerHTML=`<div class="grip"></div>
-    <div style="text-align:center;margin:6px 0 12px"><img src="${url}" style="max-width:160px;max-height:200px;border-radius:14px;border:1px solid var(--line)"></div>
-    <div class="read-badge" style="margin:0 auto 4px;display:flex;width:fit-content">📷 Label captured</div>
-    <h2 style="margin-top:8px">Add the details</h2>
-    <div class="sd">Auto-reading the label is the production feature (it needs the app’s AI backend). For now, pop in the basics from your photo — the AI still schedules it perfectly.</div>
+  sheet.innerHTML=`<div class="grip"></div>${photoHead(url)}
+    <div style="text-align:center;padding:6px 0 10px">
+      <div class="spinner"></div>
+      <div style="font-size:16px;font-weight:700;margin-top:14px">Reading your label…</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:5px">${pct?pct+'%':'Warming up the reader (first scan takes a few seconds)'}</div>
+    </div>`;
+}
+function scanResult(url,p){
+  const draft={id:uid(),name:p.name||'Supplement',brand:'',emoji:emojiFor(p.type),serving:'1 serving',dose:p.dose||'',tags:[p.type||'flexible'],active:true};
+  window.__draft=draft;
+  const sheet=document.getElementById('sheet');
+  sheet.innerHTML=`<div class="grip"></div>${photoHead(url)}
+    <div class="read-badge" style="margin:0 auto 6px;display:flex;width:fit-content">✓ Read from your label</div>
+    <h2 style="margin-top:4px">Look right?</h2>
+    <div class="sd">I pulled these off your label — fix anything, then confirm.</div>
+    <div class="field"><label>Name</label><input id="r-name" value="${esc(draft.name)}"></div>
+    <div class="field"><label>Serving</label><input id="r-serving" value="${esc(draft.serving)}"></div>
+    <div class="field flag"><label>Dose · double-check this one</label><input id="r-dose" value="${esc(draft.dose)}"></div>
+    <button class="btn btn-gold" onclick="confirmAdd()">Add to my stack</button>`;
+}
+function scanFallback(url){
+  const sheet=document.getElementById('sheet');
+  sheet.innerHTML=`<div class="grip"></div>${photoHead(url)}
+    <div class="read-badge" style="margin:0 auto 6px;display:flex;width:fit-content;background:var(--info-bg);border-color:var(--info-br);color:var(--info)">📷 Label captured</div>
+    <h2 style="margin-top:4px">Add the details</h2>
+    <div class="sd">Couldn’t read that one clearly — lighting or angle can do it. Pop in the basics and the AI still schedules it perfectly.</div>
     <div class="field"><label>Name</label><input id="m-name" placeholder="e.g. Vitamin D3"></div>
     <div class="field"><label>Dose</label><input id="m-dose" placeholder="e.g. 5000 IU"></div>
     <div class="field"><label>Type</label>
@@ -582,7 +624,60 @@ function onCapture(e){
         <option value="with_food">Take with food</option>
         <option value="flexible">Other / flexible</option>
       </select></div>
-    <button class="btn btn-gold" onclick="commitManual()">Continue</button>`;
+    <button class="btn btn-gold" onclick="commitManual()">Add to my stack</button>`;
+}
+function loadTesseract(cb){
+  if(window.Tesseract){ cb(); return; }
+  const srcs=[
+    'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+    'https://unpkg.com/tesseract.js@5/dist/tesseract.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js'
+  ];
+  let i=0;
+  (function tryNext(){
+    if(i>=srcs.length){ cb('err'); return; }
+    const s=document.createElement('script');
+    s.src=srcs[i++];
+    s.onload=()=>cb();
+    s.onerror=tryNext;
+    document.head.appendChild(s);
+  })();
+}
+const DETECTORS=[
+  {keys:['vitamin d','d3','d-3'], name:'Vitamin D3', type:'fat_soluble', d3:true},
+  {keys:['fish oil','omega'], name:'Omega-3 Fish Oil', type:'fat_soluble'},
+  {keys:['coenzyme','coq','ubiquin'], name:'CoQ10', type:'fat_soluble'},
+  {keys:['calcium'], name:'Calcium', type:'calcium'},
+  {keys:['ferrous','iron'], name:'Iron', type:'iron'},
+  {keys:['magnesium'], name:'Magnesium', type:'magnesium'},
+  {keys:['zinc'], name:'Zinc', type:'zinc'},
+  {keys:['vitamin c','ascorbic'], name:'Vitamin C', type:'vitamin_c'},
+  {keys:['b-complex','b complex','b12','b-12','methylcobalamin'], name:'B-Complex', type:'bvitamin'},
+  {keys:['melatonin'], name:'Melatonin', type:'flexible'},
+  {keys:['probiotic'], name:'Probiotic', type:'with_food'},
+  {keys:['ashwagandha'], name:'Ashwagandha', type:'flexible'},
+  {keys:['creatine'], name:'Creatine', type:'flexible'},
+  {keys:['turmeric','curcumin'], name:'Turmeric', type:'with_food'},
+  {keys:['collagen'], name:'Collagen', type:'flexible'},
+  {keys:['biotin'], name:'Biotin', type:'bvitamin'},
+  {keys:['vitamin e'], name:'Vitamin E', type:'fat_soluble'},
+  {keys:['vitamin a'], name:'Vitamin A', type:'fat_soluble'},
+  {keys:['vitamin k'], name:'Vitamin K', type:'fat_soluble'},
+];
+function parseLabel(text){
+  const t=(text||'').toLowerCase();
+  let best=null, bestIdx=1e9;
+  for(const d of DETECTORS){
+    let idx=1e9;
+    for(const k of d.keys){ const i=t.indexOf(k); if(i>=0 && i<idx) idx=i; }
+    if(idx<bestIdx){ bestIdx=idx; best=d; }
+  }
+  let name='', type='flexible';
+  if(best){ name=best.name; type=best.type; if(best.d3 && t.indexOf('k2')>=0) name='Vitamin D3 + K2'; }
+  let dose='';
+  const m=t.match(/(\d[\d,\.]*)\s?(iu|mg|mcg|µg|g)\b/i);
+  if(m){ let u=m[2].toUpperCase(); if(u==='µG')u='MCG'; dose=m[1].replace(/,/g,'')+' '+u; }
+  return {name, dose, type};
 }
 let scanIndex=0;
 function doScan(){

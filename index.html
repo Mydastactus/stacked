@@ -543,17 +543,46 @@ function openAdd(){
   const sheet=document.getElementById('sheet');
   sheet.innerHTML=`<div class="grip"></div>
     <h2>Add a supplement</h2>
-    <div class="sd">Point at a label to scan it, or enter it by hand.</div>
+    <div class="sd">Snap the label with your camera, or enter it by hand.</div>
     <div class="vf"><div class="sl"></div>
       <div class="lbl"><div class="lt">Supplement Facts</div>
         <div class="lf"><span>Serving Size</span><span>1</span></div>
         <div class="lf"><span>Vitamin D3</span><span>5000 IU</span></div>
         <div class="lf"><span>Calcium</span><span>600 mg</span></div>
         <div style="margin-top:6px;font-size:7px;color:#888">%DV based on 2,000 cal diet</div></div>
-      <div class="pr">Point at any supplement label</div></div>
-    <div class="cap" onclick="doScan()"></div>
+      <div class="pr">Tap the shutter to open your camera</div></div>
+    <input type="file" accept="image/*" capture="environment" id="scanInput" style="display:none" onchange="onCapture(event)">
+    <div class="cap" onclick="document.getElementById('scanInput').click()"></div>
+    <button class="btn btn-slate" onclick="doScan()">✨ Try a demo scan — no bottle needed</button>
     <button class="btn btn-ghost" onclick="manualAdd()">Enter manually instead</button>`;
   openModal();
+}
+function onCapture(e){
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const url = URL.createObjectURL(f);
+  S.badges.scanner = true; save();
+  const sheet=document.getElementById('sheet');
+  sheet.innerHTML=`<div class="grip"></div>
+    <div style="text-align:center;margin:6px 0 12px"><img src="${url}" style="max-width:160px;max-height:200px;border-radius:14px;border:1px solid var(--line)"></div>
+    <div class="read-badge" style="margin:0 auto 4px;display:flex;width:fit-content">📷 Label captured</div>
+    <h2 style="margin-top:8px">Add the details</h2>
+    <div class="sd">Auto-reading the label is the production feature (it needs the app’s AI backend). For now, pop in the basics from your photo — the AI still schedules it perfectly.</div>
+    <div class="field"><label>Name</label><input id="m-name" placeholder="e.g. Vitamin D3"></div>
+    <div class="field"><label>Dose</label><input id="m-dose" placeholder="e.g. 5000 IU"></div>
+    <div class="field"><label>Type</label>
+      <select id="m-type">
+        <option value="fat_soluble">Fat-soluble vitamin (A/D/E/K, fish oil)</option>
+        <option value="iron">Iron</option>
+        <option value="calcium">Calcium</option>
+        <option value="zinc">Zinc</option>
+        <option value="magnesium">Magnesium / sleep support</option>
+        <option value="bvitamin">B-vitamin / energy</option>
+        <option value="vitamin_c">Vitamin C</option>
+        <option value="with_food">Take with food</option>
+        <option value="flexible">Other / flexible</option>
+      </select></div>
+    <button class="btn btn-gold" onclick="commitManual()">Continue</button>`;
 }
 let scanIndex=0;
 function doScan(){

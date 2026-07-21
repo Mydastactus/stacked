@@ -232,6 +232,11 @@
     color:var(--muted);font-size:12px;font-weight:600;padding:7px 13px;border-radius:999px;cursor:pointer;z-index:401;}
   .spinner{width:40px;height:40px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--gold);margin:8px auto 0;animation:spin .9s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
+  .chipwrap{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 16px;}
+  .chip2{background:var(--card);border:1px solid var(--line);color:var(--white);font-size:13px;font-weight:600;
+    padding:9px 13px;border-radius:999px;cursor:pointer;transition:all .15s;}
+  .chip2:active{transform:scale(.95);}
+  .chip2.on{background:var(--gold-dim);border-color:rgba(212,175,55,.5);color:var(--gold-soft);}
 </style>
 </head>
 <body>
@@ -576,7 +581,7 @@ function onCapture(e){
         .then(res=>{
           const text=(res&&res.data&&res.data.text)||'';
           const p=parseLabel(text);
-          if(!p.name && !p.dose){ scanFallback(url); } else { scanResult(url, p); }
+          if(!p.name){ scanFallback(url); } else { scanResult(url, p); }
         })
         .catch(()=>scanFallback(url));
     }catch(_){ scanFallback(url); }
@@ -604,14 +609,22 @@ function scanResult(url,p){
     <div class="field flag"><label>Dose · double-check this one</label><input id="r-dose" value="${esc(draft.dose)}"></div>
     <button class="btn btn-gold" onclick="confirmAdd()">Add to my stack</button>`;
 }
+const QUICKPICK=[
+  ['Vitamin D3','fat_soluble'],['Vitamin D3 + K2','fat_soluble'],['Omega-3 Fish Oil','fat_soluble'],
+  ['Magnesium','magnesium'],['Calcium','calcium'],['Iron','iron'],['Zinc','zinc'],
+  ['Vitamin C','vitamin_c'],['B-Complex','bvitamin'],['NAC','flexible'],['CoQ10','fat_soluble'],
+  ['Probiotic','with_food'],['Melatonin','flexible'],['Creatine','flexible'],['Ashwagandha','flexible']
+];
 function scanFallback(url){
+  const chips=QUICKPICK.map(c=>`<button class="chip2" onclick="pickChip(this,'${c[0].replace(/'/g,"\\'")}','${c[1]}')">${c[0]}</button>`).join('');
   const sheet=document.getElementById('sheet');
   sheet.innerHTML=`<div class="grip"></div>${photoHead(url)}
     <div class="read-badge" style="margin:0 auto 6px;display:flex;width:fit-content;background:var(--info-bg);border-color:var(--info-br);color:var(--info)">📷 Label captured</div>
-    <h2 style="margin-top:4px">Add the details</h2>
-    <div class="sd">Couldn’t read that one clearly — lighting or angle can do it. Pop in the basics and the AI still schedules it perfectly.</div>
+    <h2 style="margin-top:4px">What is it?</h2>
+    <div class="sd">Tap the closest match — or type it in below. (Real-world labels are tricky to auto-read; the production app uses cloud AI for this.)</div>
+    <div class="chipwrap">${chips}</div>
     <div class="field"><label>Name</label><input id="m-name" placeholder="e.g. Vitamin D3"></div>
-    <div class="field"><label>Dose</label><input id="m-dose" placeholder="e.g. 5000 IU"></div>
+    <div class="field"><label>Dose <span style="color:var(--dim)">(optional)</span></label><input id="m-dose" placeholder="e.g. 5000 IU"></div>
     <div class="field"><label>Type</label>
       <select id="m-type">
         <option value="fat_soluble">Fat-soluble vitamin (A/D/E/K, fish oil)</option>
@@ -625,6 +638,12 @@ function scanFallback(url){
         <option value="flexible">Other / flexible</option>
       </select></div>
     <button class="btn btn-gold" onclick="commitManual()">Add to my stack</button>`;
+}
+function pickChip(btn,name,type){
+  const n=document.getElementById('m-name'); if(n) n.value=name;
+  const s=document.getElementById('m-type'); if(s) s.value=type;
+  document.querySelectorAll('.chip2').forEach(b=>b.classList.remove('on'));
+  if(btn) btn.classList.add('on');
 }
 function loadTesseract(cb){
   if(window.Tesseract){ cb(); return; }

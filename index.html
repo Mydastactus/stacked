@@ -237,6 +237,19 @@
     padding:9px 13px;border-radius:999px;cursor:pointer;transition:all .15s;}
   .chip2:active{transform:scale(.95);}
   .chip2.on{background:var(--gold-dim);border-color:rgba(212,175,55,.5);color:var(--gold-soft);}
+  /* AI schedule options */
+  .opt{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:14px 15px;margin-bottom:10px;cursor:pointer;transition:all .18s;}
+  .opt.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
+  .opt-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;gap:8px;}
+  .opt-when{font-size:15px;font-weight:700;display:flex;align-items:center;}
+  .opt-time{font-size:12.5px;color:var(--muted);font-weight:500;margin-left:6px;}
+  .opt-badge{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:4px 9px;border-radius:999px;
+    background:var(--gold-dim);color:var(--gold-soft);border:1px solid rgba(212,175,55,.4);white-space:nowrap;}
+  .opt-badge.alt{background:var(--card2);color:var(--muted);border-color:var(--line);}
+  .opt-why{font-size:12.5px;color:var(--muted);line-height:1.5;}
+  .opt.sel .opt-why{color:var(--white);}
+  .rdo{width:16px;height:16px;border-radius:50%;border:2px solid #3D5470;margin-right:9px;flex-shrink:0;transition:all .18s;}
+  .rdo.on{border-color:var(--gold);background:radial-gradient(circle at center, var(--gold) 0 4px, transparent 5px);}
 </style>
 </head>
 <body>
@@ -779,20 +792,85 @@ function confirmAdd(){
   d.name=document.getElementById('r-name').value||d.name;
   d.serving=document.getElementById('r-serving').value||d.serving;
   d.dose=document.getElementById('r-dose').value||d.dose;
-  const plan=scheduleSupplement(d,S.stack);
-  d.anchor=plan.anchor;
-  const adv=medAdvisory(d);
-  // show the schedule reveal
-  const sheet=document.getElementById('sheet');
-  const m=anchorMeta(plan.anchor);
-  sheet.innerHTML=`<div class="grip"></div>
-    <div class="insight"><div class="sp">✦</div>
-      <div class="it">Best time: with ${m.label.toLowerCase()}</div>
-      <div class="ib">${plan.rationale.replace('✦','')}</div></div>
-    ${adv?`<div class="advisory"><div class="g">i</div><div class="b"><div class="h">GOOD TO KNOW</div>${adv}</div></div>`:''}
-    <button class="btn btn-gold" onclick="finalizeAdd()">Sounds good</button>
-    <button class="btn btn-ghost" onclick="pickAnchor()">Choose a different time</button>`;
+  showOptions(d);
 }
+// Generate a ranked list of scheduling options, each with its own reasoning + tradeoff.
+function scheduleOptions(sup, stack){
+  const t=sup.tags, has=x=>t.includes(x);
+  const anchorOf=name=>{ const s=stack.find(x=>x.tags.includes(name)&&x.active); return s?s.anchor:null; };
+  const ironAt=anchorOf('iron'), calAt=anchorOf('calcium'), zincAt=anchorOf('zinc');
+  const O=(anchor,why,extra)=>Object.assign({anchor,why},extra||{});
+  let list=[];
+  if(has('sleep_strict')){
+    list=[ O('bedtime',"Melatonin signals sleep onset — take it 30–60 minutes before bed. Timing genuinely matters for this one.",{badge:'Recommended',rec:true}) ];
+  } else if(has('magnesium')||has('sleep')){
+    list=[ O('bedtime',"Magnesium glycinate is calming and may support sleep — evening is its natural home.",{badge:'Recommended',rec:true}),
+           O('dinner',"If bedtime is easy to forget, an evening meal works nearly as well.",{badge:'Alternative',alt:true}) ];
+  } else if(has('iron')){
+    list=[ O('lunch',"Iron competes with calcium and zinc for absorption, so it gets its own slot 2+ hours away — and clear of morning coffee or tea, which can cut absorption by up to 60%.",{badge:'Recommended',rec:true}),
+           O('wake',"Iron absorbs best on an empty stomach first thing — the strongest option, but it can cause nausea. Great if your stomach tolerates it (skip the coffee).",{badge:'Best absorption',alt:true}) ];
+    const meal=(calAt==='dinner')?'breakfast':'dinner';
+    list.push(O(meal,"A meal slot kept away from your calcium. Convenient, but a stand-alone slot absorbs a bit better.",{badge:'Also works',alt:true}));
+  } else if(has('calcium')){
+    const primary=(ironAt==='dinner')?'breakfast':'dinner';
+    const other=primary==='dinner'?'breakfast':'dinner';
+    list=[ O(primary,"Calcium is placed well away from your iron so neither blocks the other. Doses over 500 mg also absorb best when split across the day.",{badge:'Recommended',rec:true}),
+           O(other,"Another meal slot — works fine, as long as it stays clear of your iron.",{badge:'Alternative',alt:true}) ];
+  } else if(has('zinc')){
+    const primary=(ironAt==='breakfast')?'dinner':'breakfast';
+    list=[ O(primary,"Zinc is gentler on the stomach with food, and kept clear of your iron, which competes with it.",{badge:'Recommended',rec:true}),
+           O(primary==='breakfast'?'dinner':'breakfast',"Another meal slot — fine as long as it stays away from iron.",{badge:'Alternative',alt:true}) ];
+  } else if(has('bvitamin')){
+    list=[ O('breakfast',"B-vitamins are energizing, so mornings avoid any chance of disrupting sleep — and food prevents nausea.",{badge:'Recommended',rec:true}),
+           O('lunch',"A midday meal works too if your mornings are rushed.",{badge:'Alternative',alt:true}) ];
+  } else if(has('vitamin_c')){
+    if(ironAt){ list=[ O(ironAt,"Vitamin C boosts iron absorption — pairing it with your iron dose is a real, well-documented synergy.",{badge:'Recommended',rec:true}),
+                       O('breakfast',"On its own, a morning slot is fine — it's water-soluble and flexible.",{badge:'Alternative',alt:true}) ]; }
+    else { list=[ O('breakfast',"Water-soluble and flexible — a morning slot builds an easy routine.",{badge:'Recommended',rec:true}),
+                  O('lunch',"Midday works just as well; consistency matters more than the exact time.",{badge:'Alternative',alt:true}) ]; }
+  } else if(has('fat_soluble')){
+    list=[ O('breakfast',"Fat-soluble — a morning meal with a little fat maximizes absorption, and anchors it to a routine you already have.",{badge:'Recommended',rec:true}),
+           O('dinner',"Any fatty meal works — pick dinner if your breakfast tends to be light or skipped.",{badge:'Alternative',alt:true}) ];
+  } else if(has('with_food')){
+    list=[ O('dinner',"Best taken with food to avoid stomach upset — an evening meal is an easy anchor.",{badge:'Recommended',rec:true}),
+           O('breakfast',"A morning meal works equally well.",{badge:'Alternative',alt:true}) ];
+  } else {
+    list=[ O('breakfast',"Timing is flexible for this one — a morning slot builds a habit you'll actually keep.",{badge:'Recommended',rec:true}),
+           O('dinner',"Prefer evenings? Works just as well — consistency beats the clock here.",{badge:'Alternative',alt:true}) ];
+  }
+  const seen=new Set(), out=[];
+  for(const o of list){ if(seen.has(o.anchor))continue; seen.add(o.anchor); out.push(o); if(out.length>=3)break; }
+  return out;
+}
+function showOptions(d){
+  window.__opts=scheduleOptions(d, S.stack.filter(x=>x.id!==d.id));
+  window.__selIdx=0;
+  d.anchor=window.__opts[0].anchor;
+  renderOptions(d);
+}
+function renderOptions(d){
+  const opts=window.__opts, sel=window.__selIdx, adv=medAdvisory(d);
+  const cards=opts.map((o,i)=>{
+    const m=anchorMeta(o.anchor);
+    return `<div class="opt ${i===sel?'sel':''}" onclick="selOpt(${i})">
+      <div class="opt-top">
+        <div class="opt-when"><span class="rdo ${i===sel?'on':''}"></span>${m.icon} ${m.label}<span class="opt-time">~${fmtTime(S.anchors[o.anchor])}</span></div>
+        ${o.badge?`<div class="opt-badge ${o.alt?'alt':''}">${o.rec?'✦ ':''}${o.badge}</div>`:''}
+      </div>
+      <div class="opt-why">${o.why}</div>
+    </div>`;
+  }).join('');
+  const chosen=anchorMeta(opts[sel].anchor);
+  const sheet=document.getElementById('sheet');
+  sheet.innerHTML=`<div class="grip"></div>
+    <h2>When should you take ${d.name}?</h2>
+    <div class="sd">The AI ranked your options — here's the why behind each. Tap to choose.</div>
+    ${cards}
+    ${adv?`<div class="advisory"><div class="g">i</div><div class="b"><div class="h">GOOD TO KNOW</div>${adv}</div></div>`:''}
+    <button class="btn btn-gold" onclick="finalizeChosen()">Add at ${chosen.label.toLowerCase()} · ~${fmtTime(S.anchors[opts[sel].anchor])}</button>`;
+}
+function selOpt(i){ window.__selIdx=i; window.__draft.anchor=window.__opts[i].anchor; renderOptions(window.__draft); }
+function finalizeChosen(){ const d=window.__draft; d.anchor=window.__opts[window.__selIdx].anchor; finalizeAdd(); }
 function pickAnchor(){
   const sheet=document.getElementById('sheet');
   const opts=['breakfast','lunch','dinner','bedtime','wake'].map(k=>{const m=anchorMeta(k);
